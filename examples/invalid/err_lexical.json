@@ -1,0 +1,7 @@
+{
+  "title": "Buku",
+  "type": "object",
+  "properties": {
+    "judul": { "type": "string" }
+  }
+}

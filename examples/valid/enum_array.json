@@ -1,0 +1,19 @@
+{
+  "title": "Simpanan",
+  "type": "object",
+  "properties": {
+    "id_simpanan":  { "type": "integer" },
+    "id_anggota":   { "type": "integer" },
+    "jenis":        { "$ref": "#/$defs/JenisSimpanan" },
+    "saldo":        { "type": "number" },
+    "riwayat_setoran": { "type": "array", "items": { "type": "number" } },
+    "catatan":      { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["id_simpanan", "id_anggota", "jenis", "saldo"],
+  "$defs": {
+    "JenisSimpanan": {
+      "type": "string",
+      "enum": ["pokok", "wajib", "sukarela", "hari-raya"]
+    }
+  }
+}

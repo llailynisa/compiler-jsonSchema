@@ -1,0 +1,21 @@
+{
+  "title": "Product",
+  "type": "object",
+  "properties": {
+    "id":               { "type": "integer" },
+    "sku":              { "type": "string" },
+    "name":             { "type": "string" },
+    "price":            { "type": "number" },
+    "in_stock":         { "type": "boolean" },
+    "is-active":        { "type": "boolean" },
+    "quantity":         { "type": "integer" },
+    "category":         { "type": "string" },
+    "brand":            { "type": "string" },
+    "weight-kg":        { "type": "number" },
+    "rating":           { "type": "number" },
+    "discount_percent": { "type": "number" },
+    "featured":         { "type": "boolean" },
+    "taxable":          { "type": "boolean" }
+  },
+  "required": ["price", "id", "sku", "in_stock", "name", "is-active"]
+}

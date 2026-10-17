@@ -1,0 +1,36 @@
+{
+  "title": "Pinjaman",
+  "type": "object",
+  "properties": {
+    "id_pinjaman":  { "type": "integer" },
+    "peminjam":     { "$ref": "#/$defs/Anggota" },
+    "jumlah":       { "type": "number" },
+    "tenor_bulan":  { "type": "integer" },
+    "status":       { "$ref": "#/$defs/StatusPinjaman" },
+    "angsuran":     { "type": "array", "items": { "$ref": "#/$defs/Angsuran" } }
+  },
+  "required": ["id_pinjaman", "peminjam", "jumlah", "status"],
+  "$defs": {
+    "StatusPinjaman": {
+      "type": "string",
+      "enum": ["aktif", "lunas", "macet"]
+    },
+    "Anggota": {
+      "type": "object",
+      "properties": {
+        "id_anggota": { "type": "integer" },
+        "nama":       { "type": "string" }
+      },
+      "required": ["id_anggota", "nama"]
+    },
+    "Angsuran": {
+      "type": "object",
+      "properties": {
+        "ke":      { "type": "integer" },
+        "nominal": { "type": "number" },
+        "lunas":   { "type": "boolean" }
+      },
+      "required": ["ke", "nominal"]
+    }
+  }
+}

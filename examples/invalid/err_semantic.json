@@ -1,0 +1,21 @@
+{
+  "title": "Pinjaman",
+  "type": "object",
+  "properties": {
+    "id_pinjaman": { "type": "integer" },
+    "peminjam": { "$ref": "#/$defs/Anggotaa" },
+    "jumlah": { "type": "decimal" },
+    "angsuran": { "type": "array" },
+    "alamat": {
+      "type": "object",
+      "properties": { "kota": { "type": "string" } }
+    }
+  },
+  "required": ["id_pinjaman", "umur"],
+  "$defs": {
+    "Anggota": {
+      "type": "object",
+      "properties": { "nama": { "type": "string" } }
+    }
+  }
+}
