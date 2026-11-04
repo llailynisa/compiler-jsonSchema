@@ -63,7 +63,72 @@ def analyze(ast: JsonNode) -> List[SemanticIssue]:
         for m in defs_node.members:
             _check_schema(m.value, defs, issues, top=True)
 
+    _check_java_names(ast, issues)
+
     return issues
+
+
+def _check_java_names(ast: JsonObject, issues: List[SemanticIssue]) -> None:
+    """Reject field identifiers that collide after Java name conversion."""
+    from compiler.lowering import JAVA_RESERVED, to_class_name, to_field_name
+
+    type_names = {}
+
+    def register_type(name: str, node: JsonNode) -> None:
+        converted = to_class_name(name)
+        if converted in type_names:
+            _add(issues, "E204", f"nama tipe '{name}' bentrok dengan '{type_names[converted]}' setelah konversi ke Java", node)
+        else:
+            type_names[converted] = name
+
+    def visit_object(schema: JsonNode) -> None:
+        if not isinstance(schema, JsonObject) or schema.get("$ref") is not None:
+            return
+        props = schema.get("properties")
+        if isinstance(props, JsonObject):
+            seen = {}
+            for member in props.members:
+                converted = to_field_name(member.key)
+                if converted in seen:
+                    _add(issues, "E204", f"nama property '{member.key}' bentrok dengan '{seen[converted]}' setelah konversi ke Java", member.value)
+                if member.key in JAVA_RESERVED:
+                    _add(issues, "E204", f"'{member.key}' adalah reserved word Java", member.value)
+                seen.setdefault(converted, member.key)
+                visit_object(member.value)
+        items = schema.get("items")
+        if items is not None:
+            visit_object(items)
+
+    if ast.get("type") is not None:
+        register_type(ast.get_string("title") or "Schema", ast)
+
+    def visit_inline_types(schema: JsonNode) -> None:
+        if not isinstance(schema, JsonObject) or schema.get("$ref") is not None:
+            return
+        props = schema.get("properties")
+        if isinstance(props, JsonObject):
+            for member in props.members:
+                child = member.value
+                if isinstance(child, JsonObject) and child.get_string("type") == "object":
+                    register_type(member.key, child)
+                if isinstance(child, JsonObject) and child.get_string("type") == "array":
+                    items = child.get("items")
+                    if isinstance(items, JsonObject) and items.get_string("type") == "object":
+                        register_type(member.key, items)
+                visit_inline_types(child)
+        items = schema.get("items")
+        if items is not None:
+            visit_inline_types(items)
+
+    visit_object(ast)
+    visit_inline_types(ast)
+    defs = collect_defs(ast)
+    for key, definition in defs.items():
+        if isinstance(definition, JsonObject) and (definition.get_string("type") == "object" or
+                (definition.get_string("type") == "string" and definition.get("enum") is not None)):
+            register_type(key, definition)
+        visit_object(definition)
+        visit_inline_types(definition)
 
 
 def _add(issues: List[SemanticIssue], code: str, message: str, node) -> None:
@@ -96,10 +161,6 @@ def _check_schema(node: JsonNode, defs, issues, top: bool) -> None:
         _add(issues, "E100", "enum harus berupa array", enum_node)
 
     if tipe == "object":
-        if not top:
-            _add(issues, "E104",
-                 "object inline tidak didukung, pindahkan ke $defs lalu pakai $ref", node)
-            return
         _check_object(node, defs, issues)
     elif tipe == "array":
         items = node.get("items")

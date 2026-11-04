@@ -5,6 +5,7 @@
   "description": "Compiler subset JSON Schema ke class dan enum Java",
   "scripts": {
     "compile": "python main.py",
+    "gui": "python gui.py",
     "test": "python -m pytest"
   }
 }

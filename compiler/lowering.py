@@ -91,14 +91,14 @@ def lower(ast: JsonNode) -> IRProgram:
 
     if ast.get("type") is not None:
         name = to_class_name(ast.get_string("title") or "Schema")
-        node = _lower_definition(name, ast, defs)
+        node = _lower_definition(name, ast, defs, program)
         if node is not None:
             program.append(node)
 
     defs_node = ast.get("$defs")
     if isinstance(defs_node, JsonObject):
         for m in defs_node.members:
-            node = _lower_definition(to_class_name(m.key), m.value, defs)
+            node = _lower_definition(to_class_name(m.key), m.value, defs, program)
             if node is not None:
                 program.append(node)
 
@@ -117,7 +117,8 @@ def _is_named_type(schema: JsonNode) -> bool:
             and (schema.get_string("type") == "object" or _is_enum(schema)))
 
 
-def _lower_definition(name: str, schema: JsonNode, defs: Dict[str, JsonNode]):
+def _lower_definition(name: str, schema: JsonNode, defs: Dict[str, JsonNode],
+                      program: IRProgram):
     """Skema object -> ClassIR, string+enum -> EnumIR, selain itu None (alias)."""
     if not isinstance(schema, JsonObject):
         return None
@@ -130,7 +131,8 @@ def _lower_definition(name: str, schema: JsonNode, defs: Dict[str, JsonNode]):
         if isinstance(props, JsonObject):
             for m in props.members:
                 is_required = m.key in required
-                java_type = _java_type(m.value, is_required, defs, ())
+                java_type = _java_type(m.value, is_required, defs, (),
+                                       to_class_name(m.key), program)
                 fields.append(FieldIR(to_field_name(m.key), java_type,
                                       json_name=m.key, required=is_required))
         return ClassIR(name, fields)
@@ -162,7 +164,8 @@ def _literal_text(node: JsonNode) -> str:
 
 
 def _java_type(schema: JsonNode, required: bool, defs: Dict[str, JsonNode],
-               seen: Tuple[str, ...]) -> str:
+               seen: Tuple[str, ...], inline_name: str,
+               program: IRProgram) -> str:
     """Tipe Java final untuk satu skema. 'seen' mencegah alias melingkar."""
     if not isinstance(schema, JsonObject):
         return "Object"
@@ -175,7 +178,7 @@ def _java_type(schema: JsonNode, required: bool, defs: Dict[str, JsonNode],
             return "Object"
         if _is_named_type(target):
             return to_class_name(name)
-        return _java_type(target, required, defs, seen + (name,))
+        return _java_type(target, required, defs, seen + (name,), inline_name, program)
 
     tipe = schema.get_string("type")
     if tipe in SCALAR_TYPES:
@@ -183,6 +186,20 @@ def _java_type(schema: JsonNode, required: bool, defs: Dict[str, JsonNode],
         return required_type if required else optional_type
     if tipe == "array":
         items = schema.get("items")
-        inner = _java_type(items, False, defs, seen) if items is not None else "Object"
+        inner = _java_type(items, False, defs, seen, inline_name, program) if items is not None else "Object"
         return f"List<{inner}>"
+    if tipe == "object":
+        name = inline_name
+        nested_fields: List[FieldIR] = []
+        required_names = _required_names(schema)
+        props = schema.get("properties")
+        if isinstance(props, JsonObject):
+            for member in props.members:
+                is_required = member.key in required_names
+                field_type = _java_type(member.value, is_required, defs, (),
+                                         to_class_name(member.key), program)
+                nested_fields.append(FieldIR(to_field_name(member.key), field_type,
+                                             json_name=member.key, required=is_required))
+        program.append(ClassIR(name, nested_fields))
+        return name
     return "Object"

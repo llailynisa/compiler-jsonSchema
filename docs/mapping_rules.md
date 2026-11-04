@@ -18,10 +18,20 @@ desain yang perlu disepakati A dan B.
 | `required` | ✅ |
 | `array` + `items` | ✅ |
 | `enum` (nilai string) | ✅ |
-| nested object | ✅ |
+| object bertingkat inline di dalam `properties` atau `items` | ✅ |
+| enum inline di dalam property atau `items` | ❌ ditolak (E104); definisikan di `$defs` lalu gunakan `$ref` |
 | `$ref` lokal ke `$defs` | ✅ |
-| `oneOf` / `anyOf` / `allOf`, `patternProperties`, `$ref` eksternal | ❌ di luar cakupan |
-| array di dalam array, enum non-string | ❌ di luar cakupan |
+| array bertingkat | ✅ diturunkan rekursif menjadi `List<List<...>>` |
+| `oneOf` / `anyOf` / `allOf`, `patternProperties`, `$ref` eksternal | ❌ tidak ditangani |
+| enum dengan anggota non-string | diterima; nilai scalar dikonversi ke teks |
+
+Validasi semantic tidak menolak keyword yang tidak dikenal seperti
+`oneOf`/`patternProperties` jika keyword itu muncul bersama skema yang valid.
+Keyword tersebut diabaikan oleh lowering. Enum hanya menjadi `EnumIR` bila
+`type`-nya `string` dan `enum` berupa array. Anggota string, angka, boolean,
+dan `null` dikonversi ke teks. Anggota berupa object atau array dikonversi
+menjadi teks kosong, sehingga nama konstantanya menjadi `VALUE`; nama konstanta
+duplikat kemudian ditolak oleh pemeriksaan IR.
 
 ---
 
@@ -47,14 +57,30 @@ sama di kedua kasus.
 | JSON Schema | Hasil Java |
 |---|---|
 | `object` + `properties` | satu `class`, satu field per property |
-| `array` + `items` bertipe T | `List<T>`, T memakai wrapper (`List<Integer>`, bukan `List<int>`) |
-| `array` + `items` object | `List<NamaClass>`, dan class dibuat terpisah |
+| `array` + `items` bertipe T | `List<T>`, T diturunkan seolah tidak required (`List<Integer>`, bukan `List<int>`) |
+| `array` + `items` berupa object inline atau `$ref` ke object | `List<NamaClass>`, dan class dibuat terpisah |
 | `enum` | satu `enum` terpisah |
-| nested object | class terpisah, dipakai sebagai tipe field |
-| `$ref: "#/$defs/X"` | tipe `X`, class atau enum `X` dibuat dari definisi di `$defs` |
+| object dari `$defs` yang dirujuk dengan `$ref` | class terpisah, dipakai sebagai tipe field |
+| object inline di dalam `properties` atau `items` | class terpisah, dinamai dari property; untuk item array, dari nama property array |
+| `$ref: "#/$defs/X"` | tipe hasil definisi `X`; object/enum memakai nama `X`, alias ditelusuri |
 
-Array tidak punya primitif/wrapper: elemennya selalu wrapper dan field `List<T>`
-tidak berubah walau required atau tidak.
+Array tidak punya primitif/wrapper: lowering meneruskan `required=False` ke tipe
+item. Jika item-nya array, proses ini berulang; misalnya array dari integer
+menjadi `List<Integer>` dan array dari array integer menjadi
+`List<List<Integer>>`. Status required pada field array hanya mengatur metadata
+field, bukan tipe `List`.
+
+`$ref` ke `$defs` yang berisi object atau enum menggunakan nama tipe hasil
+konversi dari nama definisi. `$ref` ke definisi alias scalar/array ditelusuri
+hingga mendapatkan tipe akhirnya. Perlindungan terhadap alias yang melingkar
+menghasilkan `Object`; siklus referensi object langsung tetap menggunakan nama
+class object tersebut.
+
+Lowering mengembalikan IR kosong jika AST bukan object. Untuk AST object, root
+hanya dijadikan definisi bila memiliki `type`; `$defs` tetap diproses. Definisi
+yang bukan object atau enum string tidak menghasilkan node IR sendiri. Dalam
+alur CLI, semantic analysis dijalankan lebih dulu dan biasanya menolak skema
+yang tidak valid sebelum lowering.
 
 ---
 
@@ -64,10 +90,15 @@ tidak berubah walau required atau tidak.
 
 | Sumber | Nama Java |
 |---|---|
-| root schema | dari `title` bila ada, kalau tidak `Root` **[konfirmasi]** |
-| property bertipe nested object atau enum | nama property → PascalCase. `profile` → `Profile` |
-| item array berupa object | nama property → PascalCase. `addresses` → `Addresses` **[konfirmasi]** |
+| root schema | dari `title` bila ada, kalau tidak `Schema` |
+| property bertipe object inline | nama property → PascalCase. `profile` → `Profile` |
+| item array berupa object inline | nama property array → PascalCase. `addresses` → `Addresses` |
 | entri di `$defs` | nama kuncinya apa adanya → PascalCase. `Address` → `Address` |
+
+Object inline didukung. Setiap object inline menghasilkan class tersendiri;
+object di `items` memakai nama property array. Lowering menambahkan class inline
+ke IR saat menemukannya, sehingga class inline bisa muncul sebelum class yang
+memuat field tersebut.
 
 ### 4.2 Nama field (camelCase)
 
@@ -88,15 +119,29 @@ Nilai asli disimpan di `EnumIR.json_values`.
 ### 4.4 Cara konversi
 
 1. Pecah nama pada karakter bukan huruf/angka (`-`, `_`, spasi, dan lainnya).
-2. Gabungkan sesuai gaya: PascalCase, camelCase, atau UPPER_SNAKE_CASE.
-3. Kalau hasil diawali angka, tambahkan `_` di depan.
+2. Gabungkan kata sesuai gaya: PascalCase, camelCase, atau UPPER_SNAKE_CASE.
+   Kapitalisasi selain huruf pertama kata umumnya dipertahankan dari input.
+3. Jika hasil diawali angka, tambahkan `_` di depan.
+4. Nama kosong menjadi `Unnamed` (class), `field` (field), atau `VALUE`
+   (konstanta enum).
+5. Jika hasil konversi nama class, field, atau konstanta sama persis dengan
+   reserved word Java yang tercantum di `lowering.py`, helper lowering
+   menambahkan `_` di belakang.
 
 ### 4.5 Reserved word dan bentrok
 
-Compiler **tidak mengubah diam-diam** nama yang bermasalah. Nama yang menjadi
-reserved word Java (`class`, `int`, `default`, dan lainnya), atau dua nama yang
-bentrok setelah dikonversi (`first-name` dan `first_name` sama-sama menjadi
-`firstName`), dilaporkan sebagai error semantic.
+Semantic analysis menolak nama property yang teks aslinya merupakan reserved
+word Java, serta bentrok nama field atau tipe setelah konversi, dengan E204.
+Jadi property bernama `class` ditolak, walaupun helper lowering sendiri akan
+mengubahnya menjadi `class_`. Nama tipe (root, `$defs`, dan object inline)
+yang merupakan reserved word setelah konversi tidak ditolak semata-mata karena
+reserved word; helper lowering menambahkan `_`. Bentrok nama tipe tetap
+dilaporkan sebagai E204.
+
+Lowering juga dapat menghasilkan nama konstanta enum yang sama dari nilai
+berbeda. Kondisi itu tidak dilaporkan oleh semantic analysis; pemeriksaan IR
+(`check_ir`) mendeteksinya sebagai konstanta enum ganda dan CLI menghentikan
+code generation.
 
 ---
 
@@ -107,10 +152,11 @@ kodenya.
 
 | Kode | Kondisi | Contoh |
 |---|---|---|
-| E201 | `$ref` menunjuk ke definisi yang tidak ada | `"$ref": "#/$defs/Foo"` tetapi `Foo` tidak ada |
-| E202 | nama di `required` tidak ada di `properties` | `"required": ["email"]` tanpa property `email` |
-| E203 | nilai `type` tidak dikenal | `"type": "text"` |
-| E204 | nama bentrok atau reserved word Java | property bernama `class` |
+| E101 | `$ref` menunjuk ke definisi yang tidak ada atau bukan `$ref` lokal | `"$ref": "#/$defs/Foo"` tetapi `Foo` tidak ada |
+| E102 | nama di `required` tidak ada di `properties` | `"required": ["email"]` tanpa property `email` |
+| E103 | nilai `type` tidak dikenal atau tidak tersedia | `"type": "text"` |
+| E104 | enum inline tidak didukung | enum harus diletakkan di `$defs` dan dirujuk dengan `$ref` |
+| E204 | nama field atau tipe hasil konversi bentrok; property teks aslinya memakai reserved word Java | `first-name` dan `first_name`, atau property `class` |
 
 ---
 
@@ -125,7 +171,7 @@ kodenya.
   "properties": {
     "name":    { "type": "string" },
     "age":     { "type": "integer" },
-    "status":  { "enum": ["active", "in-progress"] },
+    "status":  { "$ref": "#/$defs/Status" },
     "tags":    { "type": "array", "items": { "type": "string" } },
     "address": { "$ref": "#/$defs/Address" },
     "profile": {
@@ -135,6 +181,7 @@ kodenya.
   },
   "required": ["name", "age"],
   "$defs": {
+    "Status": { "type": "string", "enum": ["active", "in-progress"] },
     "Address": {
       "type": "object",
       "properties": { "city": { "type": "string" } },
@@ -147,13 +194,8 @@ kodenya.
 ### Hasil lowering (IR, format `dump_ir`)
 
 ```
-EnumIR Status
-  - ACTIVE   (json: "active")
-  - IN_PROGRESS   (json: "in-progress")
 ClassIR Profile
   - bio: String
-ClassIR Address
-  - city: String [required]
 ClassIR User
   - name: String [required]
   - age: int [required]
@@ -161,10 +203,17 @@ ClassIR User
   - tags: List<String>
   - address: Address
   - profile: Profile
+EnumIR Status
+  - ACTIVE   (json: "active")
+  - IN_PROGRESS   (json: "in-progress")
+ClassIR Address
+  - city: String [required]
 ```
 
 Perhatikan `age` menjadi `int` karena required, sedangkan `status` bukan
-required sehingga tidak ada pengaruh primitif/wrapper (tipenya enum).
+required sehingga tidak ada pengaruh primitif/wrapper (tipenya enum). Enum
+menjadi `EnumIR` bila didefinisikan sebagai `type: "string"` dengan `enum`
+berupa array.
 
 ### Output (Java)
 
@@ -210,9 +259,9 @@ Catatan: `import java.util.List;` hanya muncul karena `User` punya field
 
 ## 7. Keputusan yang perlu dikonfirmasi
 
-1. Nama class root: `title` dengan cadangan `Root`.
-2. Nama class item array berupa object: sama dengan nama property.
+1. Nama class root: `title` dengan cadangan `Schema`.
+2. Nama class object inline dalam property atau item array: nama property dalam PascalCase.
 3. Output class hanya `private` field + getter + setter (tanpa constructor,
    `toString`, dan sebagainya).
 4. Semua file di default package (tanpa baris `package`).
-5. Kode error E201 sampai E204 dan penomorannya.
+5. Kode error semantik mengikuti `compiler/semantic.py`; E201 sampai E203 tidak digunakan.

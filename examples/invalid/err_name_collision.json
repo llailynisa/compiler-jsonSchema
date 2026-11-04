@@ -1,0 +1,8 @@
+{
+  "title": "Account",
+  "type": "object",
+  "properties": {
+    "first-name": { "type": "string" },
+    "first_name": { "type": "string" }
+  }
+}

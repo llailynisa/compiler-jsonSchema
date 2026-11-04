@@ -34,6 +34,31 @@ def test_class_dasar():
         "public class User {\n"
         "    private int age;\n"
         "    private String name;\n"
+        "\n"
+        "    public int getAge() {\n"
+        "        return age;\n"
+        "    }\n"
+        "\n"
+        "    public void setAge(int age) {\n"
+        "        this.age = age;\n"
+        "    }\n"
+        "\n"
+        "    public String getName() {\n"
+        "        return name;\n"
+        "    }\n"
+        "\n"
+        "    public void setName(String name) {\n"
+        "        this.name = name;\n"
+        "    }\n"
+        "}\n"
+    )
+
+
+def test_class_tanpa_accessor():
+    node = ClassIR("User", [FieldIR("age", "int")])
+    assert generate_class(node, accessors=False) == (
+        "public class User {\n"
+        "    private int age;\n"
         "}\n"
     )
 

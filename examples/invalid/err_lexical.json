@@ -3,5 +3,6 @@
   "type": "object",
   "properties": {
     "judul": { "type": "string" }
-  }
+  },
+  "karakter": @
 }

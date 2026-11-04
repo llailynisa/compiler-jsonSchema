@@ -15,7 +15,24 @@
     "rating":           { "type": "number" },
     "discount_percent": { "type": "number" },
     "featured":         { "type": "boolean" },
-    "taxable":          { "type": "boolean" }
+    "taxable":          { "type": "boolean" },
+    "details": {
+      "type": "object",
+      "properties": {
+        "manufacturer": { "type": "string" },
+        "warranty": {
+          "type": "object",
+          "properties": { "months": { "type": "integer" } }
+        }
+      }
+    },
+    "variants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": { "sku": { "type": "string" } }
+      }
+    }
   },
   "required": ["price", "id", "sku", "in_stock", "name", "is-active"]
 }

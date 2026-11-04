@@ -190,16 +190,16 @@ def test_e103_di_dalam_defs():
 
 # ---------- E104: inline ----------
 
-def test_e104_object_inline():
+def test_object_inline_didukung():
     schema = {"type": "object",
               "properties": {"alamat": {"type": "object", "properties": {}}}}
-    assert codes(schema) == ["E104"]
+    assert codes(schema) == []
 
 
-def test_e104_object_inline_di_dalam_array():
+def test_object_inline_di_dalam_array_didukung():
     schema = {"type": "object",
               "properties": {"a": {"type": "array", "items": {"type": "object"}}}}
-    assert codes(schema) == ["E104"]
+    assert codes(schema) == []
 
 
 def test_e104_enum_inline():
